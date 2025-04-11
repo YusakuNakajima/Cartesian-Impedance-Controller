@@ -65,7 +65,7 @@ We use `RBDyn` to calculate forward kinematics and the Jacobian.
 
 The installation steps for the installation of the non-ROS dependencies are automated in `scripts/install_dependencies.sh`.
  
-## Controller Usage in ROS
+## Controller Usage in ROS 2
 Assuming that there is an initialized colcon workspace you can clone this repository, install the dependencies and compile the controller.
  
 Here are the steps:
@@ -81,7 +81,7 @@ colcon build
 source install/setup.bash
 ```
 ### Docker Installation
-```markdown
+
 To build and run the Docker container for the Cartesian Impedance Controller, follow these steps:
 
 #### Build the Docker Image
