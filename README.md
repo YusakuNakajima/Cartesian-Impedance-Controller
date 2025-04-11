@@ -139,7 +139,7 @@ cartesian_impedance_controller:
   end_effector: fr3_hand_tcp
   update_frequency: 500
   handle_trajectories: true
-  robot_description: /robot_description
+  robot_description: "robot_description"
   wrench_ee_frame: fr3_hand_tcp
   delta_tau_max: 1.0
 
