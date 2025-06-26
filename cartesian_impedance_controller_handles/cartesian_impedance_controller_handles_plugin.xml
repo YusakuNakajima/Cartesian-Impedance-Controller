@@ -1,0 +1,12 @@
+<library path="lib/libcartesian_impedance_controller_handles">
+
+  <class name="cartesian_impedance_controllers/MotionControlHandle"
+         type="cartesian_impedance_controllers::MotionControlHandle"
+         base_class_type="controller_interface::ControllerBase">
+    <description>
+      The CartesianImpedanceControllerHandle exposes an interactive marker for end-effector impedance control in Rviz.
+      This variant is designed for impedance control scenarios with stiffness and damping parameters.
+    </description>
+  </class>
+
+</library>

@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>cartesian_impedance_controller_handles</name>
+  <version>0.0.0</version>
+  <description>The cartesian_impedance_controller_handles package</description>
+
+  <!-- One maintainer tag required, multiple allowed, one person per tag -->
+  <maintainer email="user@example.com">maintainer</maintainer>
+
+  <!-- One license tag required, multiple allowed, one license per tag -->
+  <license>BSD-3-Clause</license>
+
+  <!-- Url tags are optional, but multiple are allowed, one per tag -->
+  <url type="repository">https://github.com/fzi-forschungszentrum-informatik/cartesian_impedance_controller</url>
+
+  <!-- Author tags are optional, multiple are allowed, one per tag -->
+  <author email="user@example.com">author</author>
+
+  <!-- Dependencies -->
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>interactive_markers</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>controller_interface</build_depend>
+  <build_depend>kdl_parser</build_depend>
+  <build_depend>dynamic_reconfigure</build_depend>
+  <build_depend>eigen3</build_depend>
+  <build_depend>tf_conversions</build_depend>
+
+  <build_export_depend>roscpp</build_export_depend>
+  <build_export_depend>interactive_markers</build_export_depend>
+  <build_export_depend>geometry_msgs</build_export_depend>
+  <build_export_depend>controller_interface</build_export_depend>
+  <build_export_depend>dynamic_reconfigure</build_export_depend>
+
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>interactive_markers</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>controller_interface</exec_depend>
+  <exec_depend>dynamic_reconfigure</exec_depend>
+  <exec_depend>tf_conversions</exec_depend>
+
+  <!-- Export plugin -->
+  <export>
+    <controller_interface plugin="${prefix}/cartesian_impedance_controller_handles_plugin.xml"/>
+  </export>
+</package>
