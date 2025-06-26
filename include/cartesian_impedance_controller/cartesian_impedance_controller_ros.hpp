@@ -118,6 +118,12 @@ namespace cartesian_impedance_controller
     Eigen::VectorXd tau_m_;
     Eigen::VectorXd damping_factors_;
     double nullspace_stiffness_target_;
+    
+    // Performance monitoring
+    std::chrono::steady_clock::time_point last_log_time_;
+    double total_computation_time_;
+    size_t computation_count_;
+    static constexpr double LOG_INTERVAL_SECONDS = 1.0;
 
     void read_state_from_hardware();
     void write_command_to_hardware();

@@ -112,6 +112,11 @@ namespace cartesian_impedance_controller
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(node->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
     tf_last_time_ = get_node()->now();
+    
+    // Initialize performance monitoring
+    last_log_time_ = std::chrono::steady_clock::now();
+    total_computation_time_ = 0.0;
+    computation_count_ = 0;
 
     std::stringstream joints_ss;
     joints_ss << "Joints: ";
@@ -295,6 +300,8 @@ namespace cartesian_impedance_controller
 
   controller_interface::return_type CartesianImpedanceControllerRos::update(const rclcpp::Time &, const rclcpp::Duration &)
   {
+    auto start_time = std::chrono::steady_clock::now();
+    
     if (parameter_handler_->is_old(params_))
     {
       RCLCPP_INFO(get_node()->get_logger(), "Parameters are outdated. Refreshing...");
@@ -310,6 +317,31 @@ namespace cartesian_impedance_controller
     calculateCommandedTorques(); // Populates tau_c_
     write_command_to_hardware();
     publishMsgsAndTf();
+
+    // Performance monitoring
+    auto end_time = std::chrono::steady_clock::now();
+    auto computation_time = std::chrono::duration<double>(end_time - start_time).count();
+    double computation_time_ms = computation_time * 1000.0;
+    
+    total_computation_time_ += computation_time;
+    computation_count_++;
+    
+    // Log performance statistics every LOG_INTERVAL_SECONDS
+    auto time_since_last_log = std::chrono::duration<double>(end_time - last_log_time_).count();
+    if (time_since_last_log >= LOG_INTERVAL_SECONDS) {
+      double avg_computation_time = total_computation_time_ / static_cast<double>(computation_count_);
+      double frequency = static_cast<double>(computation_count_) / time_since_last_log;
+      double cpu_usage_percent = (avg_computation_time * frequency) * 100.0;
+      
+      RCLCPP_DEBUG(get_node()->get_logger(), 
+                   "Performance: Avg=%.4fms, Freq=%.1fHz, CPU=%.1f%%, Current=%.4fms", 
+                   avg_computation_time * 1000.0, frequency, cpu_usage_percent, computation_time_ms);
+      
+      // Reset counters
+      last_log_time_ = end_time;
+      total_computation_time_ = 0.0;
+      computation_count_ = 0;
+    }
 
     return controller_interface::return_type::OK;
   }
@@ -392,26 +424,30 @@ namespace cartesian_impedance_controller
     std::string urdf_string;
     try
     {
-      std::string temp_node_name = std::string(node->get_name()) + "_param_fetcher";
-      auto temp_node = rclcpp::Node::make_shared(temp_node_name);
-  
-      auto param_client = std::make_shared<rclcpp::SyncParametersClient>(temp_node, "/robot_state_publisher");
-  
-      RCLCPP_INFO(logger, "Waiting for parameter service '/robot_state_publisher'...");
-      if (!param_client->wait_for_service(std::chrono::seconds(5))) {
-        RCLCPP_ERROR(logger, "Parameter service not available on /robot_state_publisher.");
-        return false; 
+      // Debug: List all available parameters
+      auto param_names = node->list_parameters({}, 0);
+      RCLCPP_INFO(logger, "Available parameters in controller:");
+      for (const auto& name : param_names.names) {
+        RCLCPP_INFO(logger, "  - %s", name.c_str());
       }
-  
-      auto response = param_client->get_parameters({robot_description_});
-  
-      if (response.empty() || response[0].get_type() == rclcpp::PARAMETER_NOT_SET) {
-          RCLCPP_ERROR(logger, "Parameter '%s' not set or not retrieved from '%s'.",
-                       robot_description_.c_str(), "/robot_state_publisher");
-          return false; 
+      
+      // Get robot_description from local parameters
+      // robot_description_ contains the parameter name, but we want the actual URDF content
+      // So we should get the parameter named "robot_description" directly
+      RCLCPP_INFO(logger, "Looking for robot_description parameter directly");
+      rclcpp::Parameter robot_description_param;
+      if (!node->get_parameter("robot_description", robot_description_param)) {
+        RCLCPP_ERROR(logger, "Parameter 'robot_description' not found in controller parameters.");
+        return false;
       }
-      urdf_string = response[0].as_string();
-      RCLCPP_DEBUG(logger, "Successfully retrieved URDF string (length: %zu)", urdf_string.length());
+      
+      if (robot_description_param.get_type() != rclcpp::PARAMETER_STRING) {
+        RCLCPP_ERROR(logger, "Parameter '%s' is not a string parameter.", robot_description_.c_str());
+        return false;
+      }
+      
+      urdf_string = robot_description_param.as_string();
+      RCLCPP_DEBUG(logger, "Successfully retrieved URDF string from local parameters (length: %zu)", urdf_string.length());
     }
     catch (const std::exception &e)
     {
