@@ -33,6 +33,7 @@
 #include <cartesian_impedance_controller/ControllerState.h>
 #include <cartesian_impedance_controller/dampingConfig.h>
 #include <cartesian_impedance_controller/stiffnessConfig.h>
+#include <cartesian_impedance_controller/frictionConfig.h>
 #include <cartesian_impedance_controller/wrenchConfig.h>
 
 namespace cartesian_impedance_controller
@@ -245,6 +246,13 @@ namespace cartesian_impedance_controller
     * \param[in] config 
     */
     void dynamicWrenchCb(cartesian_impedance_controller::wrenchConfig &config, uint32_t level);
+    
+    /*! \brief Callback for friction compensation dynamic reconfigure.
+    *
+    * Takes the dynamic reconfigure configuration and sets friction compensation parameters.
+    * \param[in] config 
+    */
+    void dynamicFrictionCb(cartesian_impedance_controller::frictionConfig &config, uint32_t level);
 
     /*! \brief Callback for a joint trajectory message.
     *
@@ -319,6 +327,8 @@ namespace cartesian_impedance_controller
         dynamic_server_damping_param_;    //!< Dynamic reconfigure server for damping
     std::unique_ptr<dynamic_reconfigure::Server<cartesian_impedance_controller::wrenchConfig>>
         dynamic_server_wrench_param_;     //!< Dynamic reconfigure server for commanded wrench
+    std::unique_ptr<dynamic_reconfigure::Server<cartesian_impedance_controller::frictionConfig>>
+        dynamic_server_friction_param_;   //!< Dynamic reconfigure server for friction compensation
 
     // Trajectory handling
     ros::Subscriber sub_trajectory_;  //!< Subscriber for a single trajectory

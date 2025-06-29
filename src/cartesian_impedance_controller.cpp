@@ -231,6 +231,14 @@ namespace cartesian_impedance_controller
     this->cartesian_wrench_target_ = cartesian_wrench_target;
   }
 
+  void CartesianImpedanceController::setFrictionCompensation(bool enabled, double static_compensation_torque, double velocity_threshold, double position_error_threshold)
+  {
+    this->friction_compensation_enabled_ = enabled;
+    this->static_compensation_torque_ = static_compensation_torque;
+    this->velocity_threshold_ = velocity_threshold;
+    this->position_error_threshold_ = position_error_threshold;
+  }
+
   Eigen::VectorXd CartesianImpedanceController::calculateCommandedTorques(const Eigen::VectorXd &q,
                                                                           const Eigen::VectorXd &dq,
                                                                           const Eigen::Vector3d &position,
@@ -292,14 +300,37 @@ namespace cartesian_impedance_controller
                          (this->nullspace_stiffness_ * (this->q_d_nullspace_ - this->q_) - this->nullspace_damping_ * this->dq_);
     // Torque to achieve the desired external force command in the frame of the EE of the robot.
     tau_ext = this->jacobian_.transpose() * this->cartesian_wrench_;
+    
+    // SOFTWARE FRICTION COMPENSATION
+    Eigen::VectorXd tau_friction_comp(this->n_joints_);
+    tau_friction_comp.setZero();
+    
+    // Apply friction compensation only if enabled and not too close to target
+    if (this->friction_compensation_enabled_) {
+        // Check if position error is above threshold to avoid vibrations near target
+        double position_error_norm = this->error_.head(3).norm();
+        if (position_error_norm > this->position_error_threshold_) {
+            // Static friction compensation: add small torque in direction of desired motion when velocity is near zero
+            for (int i = 0; i < this->n_joints_; ++i) {
+                if (std::abs(this->dq_[i]) < this->velocity_threshold_) {
+                    // Add friction compensation in direction of desired motion
+                    double joint_effort_direction = tau_task[i] + tau_nullspace[i];
+                    if (std::abs(joint_effort_direction) > 0.1) { // Only apply if significant effort
+                        tau_friction_comp[i] = (joint_effort_direction > 0) ? this->static_compensation_torque_ : -this->static_compensation_torque_;
+                    }
+                }
+            }
+        }
+    }
 
     // DEBUG: Print torque components
     std::cout << "Tau Task: [" << tau_task.transpose() << "] (norm: " << tau_task.norm() << ")" << std::endl;
     std::cout << "Tau Nullspace: [" << tau_nullspace.transpose() << "] (norm: " << tau_nullspace.norm() << ")" << std::endl;
     std::cout << "Tau External: [" << tau_ext.transpose() << "] (norm: " << tau_ext.norm() << ")" << std::endl;
+    std::cout << "Tau Friction Comp: [" << tau_friction_comp.transpose() << "] (norm: " << tau_friction_comp.norm() << ")" << std::endl;
 
-    // Torque commanded to the joints of the robot is composed by the superposition of these three joint-torque signals:
-    Eigen::VectorXd tau_d = tau_task + tau_nullspace + tau_ext;
+    // Torque commanded to the joints of the robot is composed by the superposition of these four joint-torque signals:
+    Eigen::VectorXd tau_d = tau_task + tau_nullspace + tau_ext + tau_friction_comp;
     std::cout << "Total Tau (before saturation): [" << tau_d.transpose() << "] (norm: " << tau_d.norm() << ")" << std::endl;
     
     saturateTorqueRate(tau_d, &this->tau_c_, this->delta_tau_max_);

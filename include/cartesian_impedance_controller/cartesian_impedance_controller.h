@@ -124,6 +124,15 @@ namespace cartesian_impedance_controller
     */
     void applyWrench(const Eigen::Matrix<double, 6, 1> &cartesian_wrench);
 
+    /*! \brief Set friction compensation parameters
+    * 
+    * \param[in] enabled Enable/disable friction compensation
+    * \param[in] static_compensation_torque Static friction compensation torque in N·m
+    * \param[in] velocity_threshold Static friction velocity threshold in rad/s
+    * \param[in] position_error_threshold Position error threshold to disable friction compensation in m
+    */
+    void setFrictionCompensation(bool enabled, double static_compensation_torque, double velocity_threshold, double position_error_threshold);
+
     /*! \brief Returns the commanded torques. Performs a filtering step.
     * 
     * This function assumes that the internal states have already been updates. The it utilizes the control rules to calculate commands.
@@ -238,6 +247,12 @@ namespace cartesian_impedance_controller
     double filter_params_wrench_{1.0};            //!< Commanded wrench filtering
 
     double delta_tau_max_{1.0};                   //!< Maximum allowed torque change per time step
+    
+    // Friction compensation parameters
+    bool friction_compensation_enabled_{false};   //!< Enable/disable friction compensation
+    double static_compensation_torque_{0.5};      //!< Static friction compensation torque in N·m
+    double velocity_threshold_{0.001};            //!< Static friction velocity threshold in rad/s
+    double position_error_threshold_{0.01};       //!< Position error threshold to disable friction compensation in m
 
   private:
     /*! \brief Implements the damping based on a stiffness

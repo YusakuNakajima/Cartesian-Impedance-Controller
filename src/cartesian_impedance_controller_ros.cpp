@@ -46,6 +46,10 @@ namespace cartesian_impedance_controller
     this->dynamic_server_wrench_param_ = std::make_unique<dynamic_reconfigure::Server<cartesian_impedance_controller::wrenchConfig>>(ros::NodeHandle(std::string(nh.getNamespace() + "/cartesian_wrench_reconfigure")));
     dynamic_server_wrench_param_->setCallback(
         boost::bind(&CartesianImpedanceControllerRos::dynamicWrenchCb, this, _1, _2));
+
+    this->dynamic_server_friction_param_ = std::make_unique<dynamic_reconfigure::Server<cartesian_impedance_controller::frictionConfig>>(ros::NodeHandle(std::string(nh.getNamespace() + "/friction_compensation_reconfigure")));
+    dynamic_server_friction_param_->setCallback(
+        boost::bind(&CartesianImpedanceControllerRos::dynamicFrictionCb, this, _1, _2));
     return true;
   }
 
@@ -213,6 +217,18 @@ namespace cartesian_impedance_controller
     double nullspace_stiffness = 0.0;
     node_handle.param<double>("nullspace_stiffness", nullspace_stiffness, 0.0);
     ROS_INFO("Initial nullspace stiffness: %f", nullspace_stiffness);
+    
+    // Load friction compensation parameters from YAML
+    bool friction_compensation_enabled = false;
+    double static_compensation_torque = 0.5;
+    double velocity_threshold = 0.001;
+    double position_error_threshold = 0.01;
+    node_handle.param<bool>("friction_compensation", friction_compensation_enabled, false);
+    node_handle.param<double>("friction_parameters/static_compensation_torque", static_compensation_torque, 0.5);
+    node_handle.param<double>("friction_parameters/velocity_threshold", velocity_threshold, 0.001);
+    node_handle.param<double>("friction_parameters/position_error_threshold", position_error_threshold, 0.01);
+    ROS_INFO("Friction compensation enabled: %s, static torque: %f N·m, velocity threshold: %f rad/s, position threshold: %f m", 
+             friction_compensation_enabled ? "true" : "false", static_compensation_torque, velocity_threshold, position_error_threshold);
 
     if (!this->initJointHandles(hw, node_handle) || !this->initMessaging(&node_handle) || !this->initRBDyn(node_handle))
     {
@@ -248,6 +264,9 @@ namespace cartesian_impedance_controller
                                                rotation_stiffness[0], rotation_stiffness[1], rotation_stiffness[2],
                                                nullspace_stiffness, true);
     
+    // Apply initial friction compensation values
+    CartesianImpedanceController::setFrictionCompensation(friction_compensation_enabled, static_compensation_torque, velocity_threshold, position_error_threshold);
+    
     // Update dynamic reconfigure server with initial values
     if (dynamic_reconfigure)
     {
@@ -261,6 +280,15 @@ namespace cartesian_impedance_controller
       stiffness_config.nullspace_stiffness = nullspace_stiffness;
       this->dynamic_server_compliance_param_->updateConfig(stiffness_config);
       ROS_INFO("Updated dynamic reconfigure with initial stiffness values");
+      
+      // Update friction compensation dynamic reconfigure with initial values
+      cartesian_impedance_controller::frictionConfig friction_config;
+      friction_config.friction_enable = friction_compensation_enabled;
+      friction_config.static_compensation_torque = static_compensation_torque;
+      friction_config.velocity_threshold = velocity_threshold;
+      friction_config.position_error_threshold = position_error_threshold;
+      this->dynamic_server_friction_param_->updateConfig(friction_config);
+      ROS_INFO("Updated dynamic reconfigure with initial friction compensation values");
     }
     
     ROS_INFO("Applied initial stiffness values from YAML configuration");
@@ -584,6 +612,14 @@ namespace cartesian_impedance_controller
       }
     }
     this->applyWrench(F);
+  }
+
+  void CartesianImpedanceControllerRos::dynamicFrictionCb(cartesian_impedance_controller::frictionConfig &config, uint32_t level)
+  {
+    if (config.update_friction)
+    {
+      CartesianImpedanceController::setFrictionCompensation(config.friction_enable, config.static_compensation_torque, config.velocity_threshold, config.position_error_threshold);
+    }
   }
 
   void CartesianImpedanceControllerRos::trajCb(const trajectory_msgs::JointTrajectoryConstPtr &msg)

@@ -35,14 +35,15 @@ http://www.youtube.com/watch?v=Q4aPm4O_9fY
 
 ## Torques
 
-The torque signal commanded to the joints of the robot is composed by the superposition of three joint-torque signals:
+The torque signal commanded to the joints of the robot is composed by the superposition of four joint-torque signals:
 - The torque calculated for Cartesian impedance control with respect to a Cartesian pose reference in the frame of the EE of the robot (`tau_task`).
 - The torque calculated for joint impedance control with respect to a desired configuration and projected in the nullspace of the robot's Jacobian, so it should not affect the Cartesian motion of the robot's end-effector (`tau_ns`).
 - The torque necessary to achieve the desired external force command (`cartesian_wrench`), in the frame of the EE of the robot (`tau_ext`).
+- Software-based friction compensation torque (`tau_friction_comp`) - optional, configurable (see friction compensation section below).
 
 ## Limitations
 
-- Joint friction is not accounted for
+- Joint friction is not accounted for by default (see friction compensation below)
 - Stiffness and damping values along the Cartesian dimensions are uncoupled
 - No built-in gravity compensation for tools or workpieces (can be achieved by commanding a wrench)
 
@@ -98,6 +99,10 @@ CartesianImpedance_trajectory_controller:
   robot_description: /robot_description # In case of a varying name
   wrench_ee_frame: iiwa_link_ee         # Default frame for wrench commands
   delta_tau_max: 1.0                    # Max. commanded torque diff between steps in Nm
+  friction_compensation: true           # Enable/disable friction compensation
+  friction_parameters:                  # Friction compensation settings
+    static_compensation_torque: 0.5     # Static friction compensation torque in N·m
+    velocity_threshold: 0.001           # Static friction velocity threshold in rad/s
   filtering:                            # Update existing values (0.0 1.0] per s
     nullspace_config: 0.1               # Nullspace configuration filtering
     pose: 0.1                           # Reference pose filtering
@@ -128,7 +133,7 @@ There are several entries:
 - `damping_factors_reconfigure`
 - `stiffness_reconfigure`
 
-For applying wrench, the `apply` checkbox needs to be ticked for the values to be used. Damping and stiffness changes are only updated when the `update` checkbox is ticked, allowing to configure changes before applying them. Note that the end-effector reference pose can not be set since it usually should follow a smooth trajectory.
+For applying wrench, the `apply` checkbox needs to be ticked for the values to be used. Damping and stiffness changes are only updated when the `update` checkbox is ticked, allowing to configure changes before applying them. The `stiffness_reconfigure` also includes friction compensation parameters that can be adjusted in real-time. Note that the end-effector reference pose can not be set since it usually should follow a smooth trajectory.
 
 ### Changing parameters with ROS messages
 In addition to the configuration with `dynamic_reconfigure`, the controller configuration can always be adapted by sending ROS messages. Outside prototyping this is the main way to parameterize it.
@@ -251,6 +256,49 @@ controller_list:
 ```
 
 **Note:** A nullspace stiffness needs to be specified so that the arm also follows the joint configuration and not just the end-effector pose.
+
+## Friction Compensation
+
+This controller includes optional software-based friction compensation to improve tracking performance, particularly for robots without hardware friction compensation (e.g., UR robots in torque control mode).
+
+### How it works
+
+The friction compensation algorithm applies additional torque to overcome static friction when joint velocities are near zero:
+
+1. **Static friction detection**: For each joint, if the joint velocity is below the `velocity_threshold` (default: 0.001 rad/s), static friction is assumed to be present.
+
+2. **Compensation torque application**: When static friction is detected and there is significant control effort (>0.1 N·m), a small compensation torque (`static_compensation_torque`) is added in the direction of the desired motion.
+
+3. **Direction determination**: The direction of compensation is determined by the sign of the combined task and nullspace torques (`tau_task + tau_nullspace`).
+
+### Configuration
+
+Friction compensation can be configured in two ways:
+
+#### YAML configuration (initial values):
+```yaml
+friction_compensation: true           # Enable/disable friction compensation
+friction_parameters:
+  static_compensation_torque: 0.5     # Compensation torque in N·m
+  velocity_threshold: 0.001           # Velocity threshold in rad/s
+```
+
+#### Dynamic reconfigure (runtime adjustment):
+- `friction_enable`: Enable/disable friction compensation
+- `static_compensation_torque`: Adjust compensation torque (0-5.0 N·m)
+- `velocity_threshold`: Adjust velocity threshold (0-0.1 rad/s)
+
+### Tuning guidelines
+
+- **static_compensation_torque**: Start with 0.5 N·m and adjust based on tracking performance. Higher values provide stronger compensation but may cause oscillations.
+- **velocity_threshold**: Typically 0.001 rad/s works well. Lower values make the compensation more sensitive to small motions.
+
+### When to use
+
+Friction compensation is particularly beneficial for:
+- UR robots in torque control mode (which lack hardware friction compensation)
+- High-precision tracking tasks
+- Low-speed operations where static friction dominates
 
 ## Safety
 We have used the controller with Cartesian translational stiffnesses of up to 1000 N/m and experienced it as very stable. It is also stable in singularities.

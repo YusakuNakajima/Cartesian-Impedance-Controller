@@ -47,6 +47,7 @@ DEPENDENCIES
 
 generate_dynamic_reconfigure_options(
   cfg/damping.cfg
+  cfg/friction.cfg
   cfg/stiffness.cfg
   cfg/wrench.cfg
 )
