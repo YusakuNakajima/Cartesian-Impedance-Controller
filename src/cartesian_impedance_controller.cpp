@@ -4,6 +4,7 @@
 #include <Eigen/Core>
 #include <Eigen/LU>
 #include <Eigen/SVD>
+#include <iostream>
 
 namespace cartesian_impedance_controller
 {
@@ -258,11 +259,31 @@ namespace cartesian_impedance_controller
     this->error_.head(3) << this->position_ - this->position_d_;
     this->error_.tail(3) << calculateOrientationError(this->orientation_d_, this->orientation_);
 
+    // DEBUG: Print pose comparison and errors
+    std::cout << "=== CARTESIAN IMPEDANCE DEBUG ===" << std::endl;
+    std::cout << "Current Position: [" << this->position_.transpose() << "]" << std::endl;
+    std::cout << "Reference Position: [" << this->position_d_.transpose() << "]" << std::endl;
+    std::cout << "Position Error: [" << this->error_.head(3).transpose() << "] (norm: " << this->error_.head(3).norm() << ")" << std::endl;
+    
+    std::cout << "Current Orientation (quat): [" << this->orientation_.w() << ", " << this->orientation_.x() << ", " << this->orientation_.y() << ", " << this->orientation_.z() << "]" << std::endl;
+    std::cout << "Reference Orientation (quat): [" << this->orientation_d_.w() << ", " << this->orientation_d_.x() << ", " << this->orientation_d_.y() << ", " << this->orientation_d_.z() << "]" << std::endl;
+    std::cout << "Orientation Error: [" << this->error_.tail(3).transpose() << "] (norm: " << this->error_.tail(3).norm() << ")" << std::endl;
+
     // Kinematic pseuoinverse
     Eigen::MatrixXd jacobian_transpose_pinv;
     pseudoInverse(this->jacobian_.transpose(), &jacobian_transpose_pinv);
 
     Eigen::VectorXd tau_task(this->n_joints_), tau_nullspace(this->n_joints_), tau_ext(this->n_joints_);
+
+    // DEBUG: Print stiffness and damping values
+    std::cout << "Cartesian Stiffness Diagonal: [" << this->cartesian_stiffness_.diagonal().transpose() << "]" << std::endl;
+    std::cout << "Cartesian Damping Diagonal: [" << this->cartesian_damping_.diagonal().transpose() << "]" << std::endl;
+    std::cout << "Nullspace Stiffness: " << this->nullspace_stiffness_ << std::endl;
+    std::cout << "Filter Values - Pose: " << this->filter_params_pose_ << ", Stiffness: " << this->filter_params_stiffness_ << std::endl;
+
+    Eigen::VectorXd cartesian_velocity = this->jacobian_ * this->dq_;
+    std::cout << "Joint Velocities: [" << this->dq_.transpose() << "]" << std::endl;
+    std::cout << "Cartesian Velocity: [" << cartesian_velocity.transpose() << "]" << std::endl;
 
     // Torque calculated for Cartesian impedance control with respect to a Cartesian pose reference in the end, in the frame of the EE of the robot.
     tau_task << this->jacobian_.transpose() * (-this->cartesian_stiffness_ * this->error_ - this->cartesian_damping_ * (this->jacobian_ * this->dq_));
@@ -272,9 +293,25 @@ namespace cartesian_impedance_controller
     // Torque to achieve the desired external force command in the frame of the EE of the robot.
     tau_ext = this->jacobian_.transpose() * this->cartesian_wrench_;
 
+    // DEBUG: Print torque components
+    std::cout << "Tau Task: [" << tau_task.transpose() << "] (norm: " << tau_task.norm() << ")" << std::endl;
+    std::cout << "Tau Nullspace: [" << tau_nullspace.transpose() << "] (norm: " << tau_nullspace.norm() << ")" << std::endl;
+    std::cout << "Tau External: [" << tau_ext.transpose() << "] (norm: " << tau_ext.norm() << ")" << std::endl;
+
     // Torque commanded to the joints of the robot is composed by the superposition of these three joint-torque signals:
     Eigen::VectorXd tau_d = tau_task + tau_nullspace + tau_ext;
+    std::cout << "Total Tau (before saturation): [" << tau_d.transpose() << "] (norm: " << tau_d.norm() << ")" << std::endl;
+    
     saturateTorqueRate(tau_d, &this->tau_c_, this->delta_tau_max_);
+    std::cout << "Final Tau (after saturation): [" << this->tau_c_.transpose() << "] (norm: " << this->tau_c_.norm() << ")" << std::endl;
+    
+    // Convergence check
+    bool position_converged = this->error_.head(3).norm() < 0.01;  // 1cm threshold
+    bool orientation_converged = this->error_.tail(3).norm() < 0.1;  // ~5.7 degrees threshold
+    std::cout << "Convergence Status - Position: " << (position_converged ? "CONVERGED" : "NOT_CONVERGED") 
+              << ", Orientation: " << (orientation_converged ? "CONVERGED" : "NOT_CONVERGED") << std::endl;
+    std::cout << "====================================" << std::endl;
+    
     return this->tau_c_;
   }
 
