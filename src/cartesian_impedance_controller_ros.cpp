@@ -175,9 +175,44 @@ namespace cartesian_impedance_controller
     node_handle.param<double>("filtering/stiffness", this->filter_params_stiffness_, 0.1);
     node_handle.param<double>("filtering/pose", this->filter_params_pose_, 0.1);
     node_handle.param<double>("filtering/wrench", this->filter_params_wrench_, 0.1);
+    
+    // DEBUG: Print loaded filtering parameters
+    ROS_INFO("Loaded filtering parameters:");
+    ROS_INFO("  nullspace_config: %f", this->filter_params_nullspace_config_);
+    ROS_INFO("  stiffness: %f", this->filter_params_stiffness_);
+    ROS_INFO("  pose: %f", this->filter_params_pose_);
+    ROS_INFO("  wrench: %f", this->filter_params_wrench_);
     node_handle.param<bool>("verbosity/verbose_print", this->verbose_print_, false);
     node_handle.param<bool>("verbosity/state_msgs", this->verbose_state_, false);
     node_handle.param<bool>("verbosity/tf_frames", this->verbose_tf_, false);
+
+    // Load initial stiffness values from YAML
+    std::vector<double> translation_stiffness, rotation_stiffness;
+    if (node_handle.getParam("stiffness/translation", translation_stiffness) && translation_stiffness.size() == 3)
+    {
+      ROS_INFO("Loading initial translation stiffness: [%f, %f, %f]", 
+               translation_stiffness[0], translation_stiffness[1], translation_stiffness[2]);
+    }
+    else
+    {
+      translation_stiffness = {200.0, 200.0, 200.0}; // Default values
+      ROS_INFO("Using default translation stiffness: [200, 200, 200]");
+    }
+    
+    if (node_handle.getParam("stiffness/rotation", rotation_stiffness) && rotation_stiffness.size() == 3)
+    {
+      ROS_INFO("Loading initial rotation stiffness: [%f, %f, %f]", 
+               rotation_stiffness[0], rotation_stiffness[1], rotation_stiffness[2]);
+    }
+    else
+    {
+      rotation_stiffness = {20.0, 20.0, 20.0}; // Default values  
+      ROS_INFO("Using default rotation stiffness: [20, 20, 20]");
+    }
+    
+    double nullspace_stiffness = 0.0;
+    node_handle.param<double>("nullspace_stiffness", nullspace_stiffness, 0.0);
+    ROS_INFO("Initial nullspace stiffness: %f", nullspace_stiffness);
 
     if (!this->initJointHandles(hw, node_handle) || !this->initMessaging(&node_handle) || !this->initRBDyn(node_handle))
     {
@@ -207,6 +242,28 @@ namespace cartesian_impedance_controller
     {
       return false;
     }
+
+    // Apply initial stiffness values loaded from YAML using base class method
+    CartesianImpedanceController::setStiffness(translation_stiffness[0], translation_stiffness[1], translation_stiffness[2],
+                                               rotation_stiffness[0], rotation_stiffness[1], rotation_stiffness[2],
+                                               nullspace_stiffness, true);
+    
+    // Update dynamic reconfigure server with initial values
+    if (dynamic_reconfigure)
+    {
+      cartesian_impedance_controller::stiffnessConfig stiffness_config;
+      stiffness_config.translation_x = translation_stiffness[0];
+      stiffness_config.translation_y = translation_stiffness[1];
+      stiffness_config.translation_z = translation_stiffness[2];
+      stiffness_config.rotation_x = rotation_stiffness[0];
+      stiffness_config.rotation_y = rotation_stiffness[1];
+      stiffness_config.rotation_z = rotation_stiffness[2];
+      stiffness_config.nullspace_stiffness = nullspace_stiffness;
+      this->dynamic_server_compliance_param_->updateConfig(stiffness_config);
+      ROS_INFO("Updated dynamic reconfigure with initial stiffness values");
+    }
+    
+    ROS_INFO("Applied initial stiffness values from YAML configuration");
 
     ROS_INFO("Finished initialization.");
     return true;
