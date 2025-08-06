@@ -5,13 +5,12 @@
 CartesianImpedance_trajectory_controller:
   type: cartesian_impedance_controller/CartesianImpedanceController
   joints:                               # Joints to control
-    - joint1
-    - joint2
-    - joint3
-    - joint4
-    - joint5
-    - joint6
-    - joint7
+    - shoulder_pan_joint
+    - shoulder_lift_joint
+    - elbow_joint
+    - wrist_1_joint
+    - wrist_2_joint
+    - wrist_3_joint
   end_effector: tool0                   # Link to control arm in
   update_frequency: 500                 # Controller update frequency in Hz
   dynamic_reconfigure: true             # Starts dynamic reconfigure server
@@ -37,10 +36,9 @@ joint_state_controller:
 hardware_interface:
   control_freq: 500 # in Hz
   joints:
-    - joint1
-    - joint2
-    - joint3
-    - joint4
-    - joint5
-    - joint6
-    - joint7
+    - shoulder_pan_joint
+    - shoulder_lift_joint
+    - elbow_joint
+    - wrist_1_joint
+    - wrist_2_joint
+    - wrist_3_joint

@@ -231,12 +231,18 @@ namespace cartesian_impedance_controller
     this->cartesian_wrench_target_ = cartesian_wrench_target;
   }
 
-  void CartesianImpedanceController::setFrictionCompensation(bool enabled, double static_compensation_torque, double velocity_threshold, double position_error_threshold)
+  void CartesianImpedanceController::setFrictionCompensation(bool enabled)
   {
     this->friction_compensation_enabled_ = enabled;
-    this->static_compensation_torque_ = static_compensation_torque;
-    this->velocity_threshold_ = velocity_threshold;
-    this->position_error_threshold_ = position_error_threshold;
+  }
+
+  void CartesianImpedanceController::setJointFrictionParameters(const std::vector<std::string>& joint_names,
+                                                               const std::map<std::string, double>& coulomb_friction_params,
+                                                               const std::map<std::string, double>& viscous_friction_params)
+  {
+    this->joint_names_ = joint_names;
+    this->coulomb_friction_params_ = coulomb_friction_params;
+    this->viscous_friction_params_ = viscous_friction_params;
   }
 
   Eigen::VectorXd CartesianImpedanceController::calculateCommandedTorques(const Eigen::VectorXd &q,
@@ -305,19 +311,31 @@ namespace cartesian_impedance_controller
     Eigen::VectorXd tau_friction_comp(this->n_joints_);
     tau_friction_comp.setZero();
     
-    // Apply friction compensation only if enabled and not too close to target
+    // Apply friction compensation if enabled
     if (this->friction_compensation_enabled_) {
-        // Check if position error is above threshold to avoid vibrations near target
-        double position_error_norm = this->error_.head(3).norm();
-        if (position_error_norm > this->position_error_threshold_) {
-            // Static friction compensation: add small torque in direction of desired motion when velocity is near zero
-            for (int i = 0; i < this->n_joints_; ++i) {
-                if (std::abs(this->dq_[i]) < this->velocity_threshold_) {
-                    // Add friction compensation in direction of desired motion
-                    double joint_effort_direction = tau_task[i] + tau_nullspace[i];
-                    if (std::abs(joint_effort_direction) > 0.1) { // Only apply if significant effort
-                        tau_friction_comp[i] = (joint_effort_direction > 0) ? this->static_compensation_torque_ : -this->static_compensation_torque_;
-                    }
+        // Check if we have per-joint friction parameters and joint names match
+        bool use_joint_params = !this->joint_names_.empty() && 
+                              !this->coulomb_friction_params_.empty() && 
+                              !this->viscous_friction_params_.empty() &&
+                              this->joint_names_.size() == this->n_joints_;
+        
+        for (size_t i = 0; i < this->n_joints_; ++i) {
+            if (use_joint_params && i < this->joint_names_.size()) {
+                // Use per-joint coulomb and viscous friction parameters
+                const std::string& joint_name = this->joint_names_[i];
+                auto coulomb_it = this->coulomb_friction_params_.find(joint_name);
+                auto viscous_it = this->viscous_friction_params_.find(joint_name);
+                
+                if (coulomb_it != this->coulomb_friction_params_.end() && 
+                    viscous_it != this->viscous_friction_params_.end()) {
+                    double coulomb_friction = coulomb_it->second;
+                    double viscous_friction = viscous_it->second;
+                    
+                    // Apply coulomb + viscous friction model: tau_friction = coulomb * sign(velocity) + viscous * velocity
+                    double velocity = this->dq_[i];
+                    double coulomb_term = (velocity > 0) ? coulomb_friction : -coulomb_friction;
+                    double viscous_term = viscous_friction * velocity;
+                    tau_friction_comp[i] = coulomb_term + viscous_term;
                 }
             }
         }

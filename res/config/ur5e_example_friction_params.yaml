@@ -1,0 +1,21 @@
+# Friction parameters for Cartesian Impedance Controller
+# (positive magnitudes only - sign determined automatically by joint velocity)
+cartesian_impedance_controller:
+  shoulder_pan_joint:
+    coulomb_friction: 2.4650064731411323
+    viscous_friction: 0.33939309485318536
+  shoulder_lift_joint:
+    coulomb_friction: 3.3366479961942384
+    viscous_friction: 0.08302370683880045
+  elbow_joint:
+    coulomb_friction: 0.42737455091630516
+    viscous_friction: 0.7042480141482198
+  wrist_1_joint:
+    coulomb_friction: 0.1925576122471535
+    viscous_friction: 0.313275491577353
+  wrist_2_joint:
+    coulomb_friction: 0.19535230964956266
+    viscous_friction: 0.20837684128012698
+  wrist_3_joint:
+    coulomb_friction: 0.23124483468117163
+    viscous_friction: 0.18873693137966496

@@ -3,10 +3,11 @@
         <arg name="gazebo_gui" default="true"/>
         <arg name="gzclient" default="true"/>
         <arg name="debug" default="false"/>
+        <arg name="friction_params_file" default="$(find cartesian_impedance_controller)/res/config/ur5e_example_friction_params.yaml" doc="Path to friction parameters YAML file (optional)"/>
 
         <!-- Load robot_description to parameter server -->
         <param name="/robot_description"
-        command="$(find xacro)/xacro '$(find cartesian_impedance_controller)/res/urdf/robot.urdf.xacro'" />
+        command="$(find xacro)/xacro '$(find ur_description)/urdf/ur5e.xacro'" />
 
         <!-- Robot state publisher -->
         <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
@@ -18,7 +19,11 @@
         <node name="joint_state_controller_spawner" pkg="controller_manager" type="spawner" args="joint_state_controller" respawn="false" output="screen"/>
 
         <!-- Load controller configuration -->
-        <rosparam file="$(find cartesian_impedance_controller)/res/config/example_controller.yaml" command="load"></rosparam>
+        <rosparam file="$(find cartesian_impedance_controller)/res/config/ur5e_example_controller.yaml" command="load"></rosparam>
+        
+        <!-- Load friction parameters if specified -->
+        <rosparam file="$(arg friction_params_file)" command="load" if="$(eval arg('friction_params_file') != '')" />
+        <param name="CartesianImpedance_trajectory_controller/friction_compensation" value="true" if="$(eval arg('friction_params_file') != '')"/>
 
         <!-- Spawn controllers -->
         <node name="controller_spawner" pkg="controller_manager" type="spawner"

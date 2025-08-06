@@ -254,6 +254,14 @@ namespace cartesian_impedance_controller
     */
     void dynamicFrictionCb(cartesian_impedance_controller::frictionConfig &config, uint32_t level);
 
+    /*! \brief Load friction parameters from rosparam
+    *
+    * Loads per-joint coulomb and viscous friction parameters from ROS parameter server.
+    * \param[in] joint_names Joint names to load parameters for
+    * \return True on success, false on failure
+    */
+    bool loadFrictionParametersFromRosparam(const std::vector<std::string>& joint_names);
+
     /*! \brief Callback for a joint trajectory message.
     *
     * Preempts the action server if that one has a running goal.

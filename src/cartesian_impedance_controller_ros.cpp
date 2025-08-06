@@ -218,22 +218,24 @@ namespace cartesian_impedance_controller
     node_handle.param<double>("nullspace_stiffness", nullspace_stiffness, 0.0);
     ROS_INFO("Initial nullspace stiffness: %f", nullspace_stiffness);
     
-    // Load friction compensation parameters from YAML
+    // Load friction compensation parameters
     bool friction_compensation_enabled = false;
-    double static_compensation_torque = 0.5;
-    double velocity_threshold = 0.001;
-    double position_error_threshold = 0.01;
     node_handle.param<bool>("friction_compensation", friction_compensation_enabled, false);
-    node_handle.param<double>("friction_parameters/static_compensation_torque", static_compensation_torque, 0.5);
-    node_handle.param<double>("friction_parameters/velocity_threshold", velocity_threshold, 0.001);
-    node_handle.param<double>("friction_parameters/position_error_threshold", position_error_threshold, 0.01);
-    ROS_INFO("Friction compensation enabled: %s, static torque: %f N·m, velocity threshold: %f rad/s, position threshold: %f m", 
-             friction_compensation_enabled ? "true" : "false", static_compensation_torque, velocity_threshold, position_error_threshold);
+    ROS_INFO("Friction compensation enabled: %s", friction_compensation_enabled ? "true" : "false");
 
     if (!this->initJointHandles(hw, node_handle) || !this->initMessaging(&node_handle) || !this->initRBDyn(node_handle))
     {
       return false;
     }
+
+    // Get joint names for friction parameter loading
+    std::vector<std::string> joint_names;
+    if (!node_handle.getParam("joints", joint_names))
+    {
+      ROS_ERROR("Could not get joint names for friction parameter loading");
+      return false;
+    }
+    
     if (enable_trajectories && !this->initTrajectories(&node_handle))
     {
       return false;
@@ -265,7 +267,7 @@ namespace cartesian_impedance_controller
                                                nullspace_stiffness, true);
     
     // Apply initial friction compensation values
-    CartesianImpedanceController::setFrictionCompensation(friction_compensation_enabled, static_compensation_torque, velocity_threshold, position_error_threshold);
+    CartesianImpedanceController::setFrictionCompensation(friction_compensation_enabled);
     
     // Update dynamic reconfigure server with initial values
     if (dynamic_reconfigure)
@@ -281,14 +283,31 @@ namespace cartesian_impedance_controller
       this->dynamic_server_compliance_param_->updateConfig(stiffness_config);
       ROS_INFO("Updated dynamic reconfigure with initial stiffness values");
       
-      // Update friction compensation dynamic reconfigure with initial values
-      cartesian_impedance_controller::frictionConfig friction_config;
-      friction_config.friction_enable = friction_compensation_enabled;
-      friction_config.static_compensation_torque = static_compensation_torque;
-      friction_config.velocity_threshold = velocity_threshold;
-      friction_config.position_error_threshold = position_error_threshold;
-      this->dynamic_server_friction_param_->updateConfig(friction_config);
-      ROS_INFO("Updated dynamic reconfigure with initial friction compensation values");
+      // Load friction parameters after dynamic reconfigure initialization
+      // This will automatically update the dynamic reconfigure server with loaded values
+      ROS_INFO("Loading friction parameters from rosparam (loaded by launch file)");
+      if (!this->loadFrictionParametersFromRosparam(joint_names)) {
+        ROS_WARN("Failed to load friction parameters, continuing with zero friction");
+        
+        // If loading failed, still update dynamic reconfigure with initial values
+        cartesian_impedance_controller::frictionConfig friction_config;
+        friction_config.friction_enable = friction_compensation_enabled;
+        friction_config.joint1_coulomb_friction = 0.0;
+        friction_config.joint1_viscous_friction = 0.0;
+        friction_config.joint2_coulomb_friction = 0.0;
+        friction_config.joint2_viscous_friction = 0.0;
+        friction_config.joint3_coulomb_friction = 0.0;
+        friction_config.joint3_viscous_friction = 0.0;
+        friction_config.joint4_coulomb_friction = 0.0;
+        friction_config.joint4_viscous_friction = 0.0;
+        friction_config.joint5_coulomb_friction = 0.0;
+        friction_config.joint5_viscous_friction = 0.0;
+        friction_config.joint6_coulomb_friction = 0.0;
+        friction_config.joint6_viscous_friction = 0.0;
+        
+        this->dynamic_server_friction_param_->updateConfig(friction_config);
+        ROS_INFO("Updated dynamic reconfigure with zero friction parameters");
+      }
     }
     
     ROS_INFO("Applied initial stiffness values from YAML configuration");
@@ -616,9 +635,32 @@ namespace cartesian_impedance_controller
 
   void CartesianImpedanceControllerRos::dynamicFrictionCb(cartesian_impedance_controller::frictionConfig &config, uint32_t level)
   {
-    if (config.update_friction)
-    {
-      CartesianImpedanceController::setFrictionCompensation(config.friction_enable, config.static_compensation_torque, config.velocity_threshold, config.position_error_threshold);
+    // Set friction compensation enable/disable
+    CartesianImpedanceController::setFrictionCompensation(config.friction_enable);
+    
+    // Update per-joint friction parameters from dynamic reconfigure
+    ros::NodeHandle nh;
+    std::vector<std::string> joint_names;
+    if (nh.getParam("joints", joint_names)) {
+      std::map<std::string, double> coulomb_params, viscous_params;
+      
+      // Map dynamic reconfigure parameters to actual joint names
+      if (joint_names.size() >= 6) {
+        coulomb_params[joint_names[0]] = config.joint1_coulomb_friction;
+        viscous_params[joint_names[0]] = config.joint1_viscous_friction;
+        coulomb_params[joint_names[1]] = config.joint2_coulomb_friction;
+        viscous_params[joint_names[1]] = config.joint2_viscous_friction;
+        coulomb_params[joint_names[2]] = config.joint3_coulomb_friction;
+        viscous_params[joint_names[2]] = config.joint3_viscous_friction;
+        coulomb_params[joint_names[3]] = config.joint4_coulomb_friction;
+        viscous_params[joint_names[3]] = config.joint4_viscous_friction;
+        coulomb_params[joint_names[4]] = config.joint5_coulomb_friction;
+        viscous_params[joint_names[4]] = config.joint5_viscous_friction;
+        coulomb_params[joint_names[5]] = config.joint6_coulomb_friction;
+        viscous_params[joint_names[5]] = config.joint6_viscous_friction;
+        
+        this->setJointFrictionParameters(joint_names, coulomb_params, viscous_params);
+      }
     }
   }
 
@@ -686,6 +728,115 @@ namespace cartesian_impedance_controller
         this->traj_as_->setSucceeded();
       }
       this->traj_running_ = false;
+    }
+  }
+
+  bool CartesianImpedanceControllerRos::loadFrictionParametersFromRosparam(const std::vector<std::string>& joint_names)
+  {
+    try {
+      ros::NodeHandle nh_friction;
+      std::map<std::string, double> coulomb_friction_params, viscous_friction_params;
+      
+      // Read friction parameters directly from parameter server
+      // Parameters are loaded by launch file into /cartesian_impedance_controller/joint_name/parameter
+      for (const auto& joint_name : joint_names) {
+        double coulomb_friction = 0.0;
+        double viscous_friction = 0.0;
+        
+        std::string coulomb_param = "/cartesian_impedance_controller/" + joint_name + "/coulomb_friction";
+        std::string viscous_param = "/cartesian_impedance_controller/" + joint_name + "/viscous_friction";
+        
+        if (nh_friction.getParam(coulomb_param, coulomb_friction)) {
+          coulomb_friction_params[joint_name] = coulomb_friction;
+        } else {
+          ROS_WARN("Coulomb friction parameter not found at %s, using 0.0", coulomb_param.c_str());
+          coulomb_friction_params[joint_name] = 0.0;
+        }
+        
+        if (nh_friction.getParam(viscous_param, viscous_friction)) {
+          viscous_friction_params[joint_name] = viscous_friction;
+        } else {
+          ROS_WARN("Viscous friction parameter not found at %s, using 0.0", viscous_param.c_str());
+          viscous_friction_params[joint_name] = 0.0;
+        }
+        
+        ROS_INFO("Loaded friction for %s: coulomb=%.6f, viscous=%.6f", 
+                 joint_name.c_str(), coulomb_friction, viscous_friction);
+      }
+      
+      // Set the friction parameters
+      this->setJointFrictionParameters(joint_names, coulomb_friction_params, viscous_friction_params);
+      
+      // Update dynamic reconfigure with loaded values
+      if (this->dynamic_server_friction_param_) {
+        cartesian_impedance_controller::frictionConfig friction_config;
+        
+        // Initialize config - preserve current friction_enable setting
+        friction_config.friction_enable = this->friction_compensation_enabled_;
+        friction_config.joint1_coulomb_friction = 0.0;
+        friction_config.joint1_viscous_friction = 0.0;
+        friction_config.joint2_coulomb_friction = 0.0;
+        friction_config.joint2_viscous_friction = 0.0;
+        friction_config.joint3_coulomb_friction = 0.0;
+        friction_config.joint3_viscous_friction = 0.0;
+        friction_config.joint4_coulomb_friction = 0.0;
+        friction_config.joint4_viscous_friction = 0.0;
+        friction_config.joint5_coulomb_friction = 0.0;
+        friction_config.joint5_viscous_friction = 0.0;
+        friction_config.joint6_coulomb_friction = 0.0;
+        friction_config.joint6_viscous_friction = 0.0;
+        
+        // Update per-joint friction parameters from loaded rosparam using actual joint names
+        if (coulomb_friction_params.find("shoulder_pan_joint") != coulomb_friction_params.end()) {
+          friction_config.joint1_coulomb_friction = coulomb_friction_params.at("shoulder_pan_joint");
+          friction_config.joint1_viscous_friction = viscous_friction_params.at("shoulder_pan_joint");
+          ROS_INFO("Set dynamic reconfigure joint1: coulomb=%.6f, viscous=%.6f", 
+                   friction_config.joint1_coulomb_friction, friction_config.joint1_viscous_friction);
+        }
+        if (coulomb_friction_params.find("shoulder_lift_joint") != coulomb_friction_params.end()) {
+          friction_config.joint2_coulomb_friction = coulomb_friction_params.at("shoulder_lift_joint");
+          friction_config.joint2_viscous_friction = viscous_friction_params.at("shoulder_lift_joint");
+          ROS_INFO("Set dynamic reconfigure joint2: coulomb=%.6f, viscous=%.6f", 
+                   friction_config.joint2_coulomb_friction, friction_config.joint2_viscous_friction);
+        }
+        if (coulomb_friction_params.find("elbow_joint") != coulomb_friction_params.end()) {
+          friction_config.joint3_coulomb_friction = coulomb_friction_params.at("elbow_joint");
+          friction_config.joint3_viscous_friction = viscous_friction_params.at("elbow_joint");
+          ROS_INFO("Set dynamic reconfigure joint3: coulomb=%.6f, viscous=%.6f", 
+                   friction_config.joint3_coulomb_friction, friction_config.joint3_viscous_friction);
+        }
+        if (coulomb_friction_params.find("wrist_1_joint") != coulomb_friction_params.end()) {
+          friction_config.joint4_coulomb_friction = coulomb_friction_params.at("wrist_1_joint");
+          friction_config.joint4_viscous_friction = viscous_friction_params.at("wrist_1_joint");
+          ROS_INFO("Set dynamic reconfigure joint4: coulomb=%.6f, viscous=%.6f", 
+                   friction_config.joint4_coulomb_friction, friction_config.joint4_viscous_friction);
+        }
+        if (coulomb_friction_params.find("wrist_2_joint") != coulomb_friction_params.end()) {
+          friction_config.joint5_coulomb_friction = coulomb_friction_params.at("wrist_2_joint");
+          friction_config.joint5_viscous_friction = viscous_friction_params.at("wrist_2_joint");
+          ROS_INFO("Set dynamic reconfigure joint5: coulomb=%.6f, viscous=%.6f", 
+                   friction_config.joint5_coulomb_friction, friction_config.joint5_viscous_friction);
+        }
+        if (coulomb_friction_params.find("wrist_3_joint") != coulomb_friction_params.end()) {
+          friction_config.joint6_coulomb_friction = coulomb_friction_params.at("wrist_3_joint");
+          friction_config.joint6_viscous_friction = viscous_friction_params.at("wrist_3_joint");
+          ROS_INFO("Set dynamic reconfigure joint6: coulomb=%.6f, viscous=%.6f", 
+                   friction_config.joint6_coulomb_friction, friction_config.joint6_viscous_friction);
+        }
+        
+        // Update the dynamic reconfigure server
+        this->dynamic_server_friction_param_->updateConfig(friction_config);
+        ROS_INFO("Successfully updated dynamic reconfigure with YAML friction parameters");
+      } else {
+        ROS_WARN("Dynamic reconfigure server for friction not initialized, cannot update config");
+      }
+      
+      ROS_INFO("Successfully loaded friction parameters from parameter server");
+      return true;
+      
+    } catch (const std::exception& e) {
+      ROS_ERROR("Exception while loading friction parameters: %s", e.what());
+      return false;
     }
   }
 } // namespace cartesian_impedance_controller

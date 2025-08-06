@@ -2,6 +2,8 @@
 
 #include <Eigen/Dense>
 #include <vector>
+#include <map>
+#include <string>
 
 namespace cartesian_impedance_controller
 {
@@ -124,14 +126,20 @@ namespace cartesian_impedance_controller
     */
     void applyWrench(const Eigen::Matrix<double, 6, 1> &cartesian_wrench);
 
-    /*! \brief Set friction compensation parameters
-    * 
-    * \param[in] enabled Enable/disable friction compensation
-    * \param[in] static_compensation_torque Static friction compensation torque in N·m
-    * \param[in] velocity_threshold Static friction velocity threshold in rad/s
-    * \param[in] position_error_threshold Position error threshold to disable friction compensation in m
+    /*! \brief Set friction compensation enable/disable
+    * \param[in] enabled Enable friction compensation
     */
-    void setFrictionCompensation(bool enabled, double static_compensation_torque, double velocity_threshold, double position_error_threshold);
+    void setFrictionCompensation(bool enabled);
+
+    /*! \brief Set per-joint friction parameters from YAML configuration
+    * 
+    * \param[in] joint_names Vector of joint names
+    * \param[in] coulomb_friction_params Map of joint names to coulomb friction values
+    * \param[in] viscous_friction_params Map of joint names to viscous friction values
+    */
+    void setJointFrictionParameters(const std::vector<std::string>& joint_names,
+                                   const std::map<std::string, double>& coulomb_friction_params,
+                                   const std::map<std::string, double>& viscous_friction_params);
 
     /*! \brief Returns the commanded torques. Performs a filtering step.
     * 
@@ -252,7 +260,11 @@ namespace cartesian_impedance_controller
     bool friction_compensation_enabled_{false};   //!< Enable/disable friction compensation
     double static_compensation_torque_{0.5};      //!< Static friction compensation torque in N·m
     double velocity_threshold_{0.001};            //!< Static friction velocity threshold in rad/s
-    double position_error_threshold_{0.01};       //!< Position error threshold to disable friction compensation in m
+    
+    // Per-joint friction parameters
+    std::vector<std::string> joint_names_;        //!< Joint names for friction mapping
+    std::map<std::string, double> coulomb_friction_params_;  //!< Coulomb friction parameters per joint
+    std::map<std::string, double> viscous_friction_params_;  //!< Viscous friction parameters per joint
 
   private:
     /*! \brief Implements the damping based on a stiffness
