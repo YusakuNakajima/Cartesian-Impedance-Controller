@@ -288,6 +288,51 @@ friction_parameters:
 - `static_compensation_torque`: Adjust compensation torque (0-5.0 N·m)
 - `velocity_threshold`: Adjust velocity threshold (0-0.1 rad/s)
 
+### Parameter Tuning Guide
+
+The controller displays real-time information to help with parameter adjustment:
+```
+=== CONTROL STATUS ===
+Position Error: 0.0012m, Orientation Error: 0.0045rad
+Joint Velocities: J1=-0.001rad/s J2=0.000rad/s J3=0.002rad/s 
+Friction Compensation: J1=-2.47Nm J2=-3.34Nm J3=-0.43Nm 
+```
+
+#### Step-by-step tuning procedure:
+
+1. **Start with friction compensation disabled**
+   - Set `friction_enable: false` in dynamic_reconfigure
+   - Observe baseline Position/Orientation Error
+   - Note any steady-state errors or oscillations
+
+2. **Enable friction compensation and tune Coulomb friction**
+   - Set `friction_enable: true`
+   - For each major joint (J1-J3), start with coulomb_friction = 2.0 Nm
+   - Adjust individual joint parameters based on:
+     - **Large steady-state errors**: Increase coulomb_friction for that joint
+     - **Oscillations**: Decrease coulomb_friction for that joint
+
+3. **Fine-tune viscous friction (optional)**
+   - Adjust viscous_friction parameters (typically 0.1-1.0 Nm·s/rad)
+   - Higher values provide more damping during motion
+
+4. **Monitor convergence**
+   - **Good tuning**: Position error < 0.005m, Orientation error < 0.05rad
+   - **Over-compensation**: Oscillations in torque commands
+   - **Under-compensation**: Large steady-state errors at low speeds
+
+#### Common scenarios:
+
+**Large Position/Orientation Error:**
+1. First check basic controller gains (stiffness/damping)
+2. If errors persist at low speeds → increase coulomb_friction
+3. If errors occur during motion → adjust viscous_friction
+
+**Robot oscillating:**
+- Reduce coulomb_friction parameters
+- Increase cartesian_damping
+- Check for mechanical resonances
+
 ### Tuning guidelines
 
 - **static_compensation_torque**: Start with 0.5 N·m and adjust based on tracking performance. Higher values provide stronger compensation but may cause oscillations.

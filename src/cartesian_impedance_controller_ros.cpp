@@ -635,13 +635,29 @@ namespace cartesian_impedance_controller
 
   void CartesianImpedanceControllerRos::dynamicFrictionCb(cartesian_impedance_controller::frictionConfig &config, uint32_t level)
   {
+    // ROS_INFO("=== DYNAMIC RECONFIGURE CALLBACK ===");
+    // ROS_INFO("Friction enable: %s", config.friction_enable ? "true" : "false");
+    // ROS_INFO("J1 coulomb: %f, viscous: %f", config.joint1_coulomb_friction, config.joint1_viscous_friction);
+    
     // Set friction compensation enable/disable
     CartesianImpedanceController::setFrictionCompensation(config.friction_enable);
     
     // Update per-joint friction parameters from dynamic reconfigure
-    ros::NodeHandle nh;
     std::vector<std::string> joint_names;
+    
+    // Try multiple parameter locations
+    ros::NodeHandle nh;
+    bool got_joints = false;
     if (nh.getParam("joints", joint_names)) {
+        got_joints = true;
+    } else if (nh.getParam("/cartesian_impedance_controller/joints", joint_names)) {
+        got_joints = true;
+    } else {
+        joint_names = this->joint_names_;  // Use stored joint names
+        got_joints = !joint_names.empty();
+    }
+    
+    if (got_joints) {
       std::map<std::string, double> coulomb_params, viscous_params;
       
       // Map dynamic reconfigure parameters to actual joint names
@@ -660,7 +676,12 @@ namespace cartesian_impedance_controller
         viscous_params[joint_names[5]] = config.joint6_viscous_friction;
         
         this->setJointFrictionParameters(joint_names, coulomb_params, viscous_params);
+        // ROS_INFO("Updated friction parameters via dynamic reconfigure");
+      } else {
+        // ROS_WARN("Not enough joint names (%zu) for friction parameters", joint_names.size());
       }
+    } else {
+      // ROS_WARN("Could not get 'joints' parameter for friction update");
     }
   }
 

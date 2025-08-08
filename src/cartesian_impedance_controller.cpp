@@ -5,6 +5,7 @@
 #include <Eigen/LU>
 #include <Eigen/SVD>
 #include <iostream>
+#include <iomanip>
 
 namespace cartesian_impedance_controller
 {
@@ -311,55 +312,121 @@ namespace cartesian_impedance_controller
     Eigen::VectorXd tau_friction_comp(this->n_joints_);
     tau_friction_comp.setZero();
     
+    // Calculate tau without friction compensation first (for comparison)
+    Eigen::VectorXd tau_without_friction = tau_task + tau_nullspace + tau_ext;
+    
     // Apply friction compensation if enabled
     if (this->friction_compensation_enabled_) {
+        
+        // std::cout << "Friction compensation ENABLED" << std::endl;
+        
         // Check if we have per-joint friction parameters and joint names match
         bool use_joint_params = !this->joint_names_.empty() && 
                               !this->coulomb_friction_params_.empty() && 
                               !this->viscous_friction_params_.empty() &&
                               this->joint_names_.size() == this->n_joints_;
         
-        for (size_t i = 0; i < this->n_joints_; ++i) {
-            if (use_joint_params && i < this->joint_names_.size()) {
-                // Use per-joint coulomb and viscous friction parameters
-                const std::string& joint_name = this->joint_names_[i];
-                auto coulomb_it = this->coulomb_friction_params_.find(joint_name);
-                auto viscous_it = this->viscous_friction_params_.find(joint_name);
-                
-                if (coulomb_it != this->coulomb_friction_params_.end() && 
-                    viscous_it != this->viscous_friction_params_.end()) {
-                    double coulomb_friction = coulomb_it->second;
-                    double viscous_friction = viscous_it->second;
+        if (use_joint_params) {
+            // std::cout << "Using per-joint friction parameters for " << this->joint_names_.size() << " joints" << std::endl;
+            
+            for (size_t i = 0; i < this->n_joints_; ++i) {
+                if (i < this->joint_names_.size()) {
+                    // Use per-joint coulomb and viscous friction parameters
+                    const std::string& joint_name = this->joint_names_[i];
+                    auto coulomb_it = this->coulomb_friction_params_.find(joint_name);
+                    auto viscous_it = this->viscous_friction_params_.find(joint_name);
                     
-                    // Apply coulomb + viscous friction model: tau_friction = coulomb * sign(velocity) + viscous * velocity
-                    double velocity = this->dq_[i];
-                    double coulomb_term = (velocity > 0) ? coulomb_friction : -coulomb_friction;
-                    double viscous_term = viscous_friction * velocity;
-                    tau_friction_comp[i] = coulomb_term + viscous_term;
+                    if (coulomb_it != this->coulomb_friction_params_.end() && 
+                        viscous_it != this->viscous_friction_params_.end()) {
+                        double coulomb_friction = coulomb_it->second;
+                        double viscous_friction = viscous_it->second;
+                        
+                        // Apply coulomb + viscous friction model: tau_friction = coulomb * sign(velocity) + viscous * velocity
+                        double velocity = this->dq_[i];
+                        double coulomb_term = (velocity > 0) ? coulomb_friction : -coulomb_friction;
+                        double viscous_term = viscous_friction * velocity;
+                        tau_friction_comp[i] = coulomb_term + viscous_term;
+                        
+                        // Debug print for each joint
+                        // std::cout << "Joint " << i << " (" << joint_name << "): "
+                        //           << "vel=" << std::setprecision(4) << std::fixed << velocity
+                        //           << " rad/s, coulomb=" << coulomb_friction
+                        //           << " Nm, viscous=" << viscous_friction
+                        //           << " Nm*s/rad" << std::endl;
+                        // std::cout << "  -> Coulomb term: " << coulomb_term << " Nm"
+                        //           << ", Viscous term: " << viscous_term << " Nm"
+                        //           << ", Total friction: " << tau_friction_comp[i] << " Nm" << std::endl;
+                    } else {
+                        // std::cout << "Joint " << i << " (" << joint_name << "): No friction parameters found" << std::endl;
+                    }
                 }
             }
+        } else {
+            // std::cout << "Per-joint friction parameters not available, using zero friction" << std::endl;
         }
+        
+        // std::cout << "Tau WITHOUT friction: [" << tau_without_friction.transpose() << "] (norm: " << tau_without_friction.norm() << ")" << std::endl;
+        // std::cout << "Tau friction compensation: [" << tau_friction_comp.transpose() << "] (norm: " << tau_friction_comp.norm() << ")" << std::endl;
+        
+        // Friction compensation applied
+        
+    } else {
+        // No friction compensation
     }
 
-    // DEBUG: Print torque components
-    std::cout << "Tau Task: [" << tau_task.transpose() << "] (norm: " << tau_task.norm() << ")" << std::endl;
-    std::cout << "Tau Nullspace: [" << tau_nullspace.transpose() << "] (norm: " << tau_nullspace.norm() << ")" << std::endl;
-    std::cout << "Tau External: [" << tau_ext.transpose() << "] (norm: " << tau_ext.norm() << ")" << std::endl;
-    std::cout << "Tau Friction Comp: [" << tau_friction_comp.transpose() << "] (norm: " << tau_friction_comp.norm() << ")" << std::endl;
+    // Parameter tuning information
+    std::cout << "=== CONTROL STATUS ===" << std::endl;
+    std::cout << "Position Error: " << std::setprecision(4) << std::fixed << this->error_.head(3).norm() << "m, ";
+    std::cout << "Orientation Error: " << this->error_.tail(3).norm() << "rad" << std::endl;
+    
+    // Joint velocities for friction compensation tuning
+    std::cout << "Joint Velocities: ";
+    for (int i = 0; i < 3 && i < this->n_joints_; ++i) {
+        std::cout << "J" << (i+1) << "=" << std::setprecision(3) << this->dq_[i] << "rad/s ";
+    }
+    std::cout << std::endl;
+    
+    // Show friction compensation effect for major joints only
+    if (this->friction_compensation_enabled_ && tau_friction_comp.norm() > 0.01) {
+        std::cout << "Friction Compensation: ";
+        for (int i = 0; i < 3 && i < this->n_joints_; ++i) {
+            std::cout << "J" << (i+1) << "=" << std::setprecision(2) << tau_friction_comp[i] << "Nm ";
+        }
+        std::cout << std::endl;
+    }
 
     // Torque commanded to the joints of the robot is composed by the superposition of these four joint-torque signals:
     Eigen::VectorXd tau_d = tau_task + tau_nullspace + tau_ext + tau_friction_comp;
-    std::cout << "Total Tau (before saturation): [" << tau_d.transpose() << "] (norm: " << tau_d.norm() << ")" << std::endl;
+    // std::cout << "\n=== TORQUE SUMMATION ===" << std::endl;
+    // std::cout << "TOTAL Tau (before saturation): [" << tau_d.transpose() << "] (norm: " << tau_d.norm() << ")" << std::endl;
+    // 
+    // // Show the contribution of each component as percentage
+    // if (tau_d.norm() > 1e-6) {
+    //     std::cout << "Contribution percentages:" << std::endl;
+    //     std::cout << "  Task: " << std::setprecision(1) << std::fixed << (tau_task.norm() / tau_d.norm() * 100.0) << "%"
+    //               << ", Nullspace: " << (tau_nullspace.norm() / tau_d.norm() * 100.0) << "%"
+    //               << ", External: " << (tau_ext.norm() / tau_d.norm() * 100.0) << "%"
+    //               << ", Friction: " << (tau_friction_comp.norm() / tau_d.norm() * 100.0) << "%" << std::endl;
+    // }
     
     saturateTorqueRate(tau_d, &this->tau_c_, this->delta_tau_max_);
-    std::cout << "Final Tau (after saturation): [" << this->tau_c_.transpose() << "] (norm: " << this->tau_c_.norm() << ")" << std::endl;
-    
-    // Convergence check
-    bool position_converged = this->error_.head(3).norm() < 0.01;  // 1cm threshold
-    bool orientation_converged = this->error_.tail(3).norm() < 0.1;  // ~5.7 degrees threshold
-    std::cout << "Convergence Status - Position: " << (position_converged ? "CONVERGED" : "NOT_CONVERGED") 
-              << ", Orientation: " << (orientation_converged ? "CONVERGED" : "NOT_CONVERGED") << std::endl;
-    std::cout << "====================================" << std::endl;
+    // std::cout << "\n=== FINAL TORQUE OUTPUT ===" << std::endl;
+    // std::cout << "FINAL Tau (after saturation):  [" << this->tau_c_.transpose() << "] (norm: " << std::setprecision(3) << std::fixed << this->tau_c_.norm() << ")" << std::endl;
+    // 
+    // // Show saturation effect
+    // Eigen::VectorXd saturation_effect = this->tau_c_ - tau_d;
+    // if (saturation_effect.norm() > 1e-6) {
+    //     std::cout << "Saturation effect:              [" << saturation_effect.transpose() << "] (norm: " << saturation_effect.norm() << ")" << std::endl;
+    // } else {
+    //     std::cout << "No saturation applied (tau within limits)" << std::endl;
+    // }
+    // 
+    // // Convergence check
+    // bool position_converged = this->error_.head(3).norm() < 0.01;  // 1cm threshold
+    // bool orientation_converged = this->error_.tail(3).norm() < 0.1;  // ~5.7 degrees threshold
+    // std::cout << "Convergence Status - Position: " << (position_converged ? "CONVERGED" : "NOT_CONVERGED") 
+    //           << ", Orientation: " << (orientation_converged ? "CONVERGED" : "NOT_CONVERGED") << std::endl;
+    // std::cout << "====================================" << std::endl;
     
     return this->tau_c_;
   }
