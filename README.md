@@ -263,30 +263,36 @@ This controller includes optional software-based friction compensation to improv
 
 ### How it works
 
-The friction compensation algorithm applies additional torque to overcome static friction when joint velocities are near zero:
+The friction compensation uses a **Coulomb + Viscous friction model** for each joint individually:
 
-1. **Static friction detection**: For each joint, if the joint velocity is below the `velocity_threshold` (default: 0.001 rad/s), static friction is assumed to be present.
+**Friction Model**: `tau_friction = coulomb * sign(velocity) + viscous * velocity`
 
-2. **Compensation torque application**: When static friction is detected and there is significant control effort (>0.1 N·m), a small compensation torque (`static_compensation_torque`) is added in the direction of the desired motion.
+1. **Coulomb friction**: Constant friction force opposing motion direction
+   - Applied based on velocity sign: `+coulomb_friction` (positive velocity) or `-coulomb_friction` (negative velocity)
+   - Dominates at low speeds and during direction changes
 
-3. **Direction determination**: The direction of compensation is determined by the sign of the combined task and nullspace torques (`tau_task + tau_nullspace`).
+2. **Viscous friction**: Velocity-proportional damping
+   - Applied as: `viscous_friction * joint_velocity`
+   - Provides additional damping during motion
+
+3. **Per-joint parameters**: Each joint (J1-J6) has individual coulomb and viscous friction parameters for precise tuning
 
 ### Configuration
-
-Friction compensation can be configured in two ways:
 
 #### YAML configuration (initial values):
 ```yaml
 friction_compensation: true           # Enable/disable friction compensation
-friction_parameters:
-  static_compensation_torque: 0.5     # Compensation torque in N·m
-  velocity_threshold: 0.001           # Velocity threshold in rad/s
+# Per-joint friction parameters (loaded from ROS parameters):
+/cartesian_impedance_controller/shoulder_pan_joint/coulomb_friction: 2.5    # N·m
+/cartesian_impedance_controller/shoulder_pan_joint/viscous_friction: 0.3    # N·m·s/rad
+# Similar parameters for each joint: shoulder_lift_joint, elbow_joint, wrist_1_joint, etc.
 ```
 
 #### Dynamic reconfigure (runtime adjustment):
+Individual parameters for each joint:
 - `friction_enable`: Enable/disable friction compensation
-- `static_compensation_torque`: Adjust compensation torque (0-5.0 N·m)
-- `velocity_threshold`: Adjust velocity threshold (0-0.1 rad/s)
+- `joint1_coulomb_friction` to `joint6_coulomb_friction`: Coulomb friction (0-5.0 N·m)  
+- `joint1_viscous_friction` to `joint6_viscous_friction`: Viscous friction (0-1.0 N·m·s/rad)
 
 ### Parameter Tuning Guide
 
