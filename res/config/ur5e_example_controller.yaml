@@ -27,6 +27,8 @@ CartesianImpedance_trajectory_controller:
     verbose_print: false                # Enables additional prints
     state_msgs: true                    # Messages of controller state
     tf_frames: true                     # Extra tf frames
+  friction_compensation: true           # Enable/disable friction compensation
+  friction_model_type: "coulomb_viscous" # Friction model: "coulomb_viscous" or "lugre"
 
 joint_state_controller:
     type: joint_state_controller/JointStateController

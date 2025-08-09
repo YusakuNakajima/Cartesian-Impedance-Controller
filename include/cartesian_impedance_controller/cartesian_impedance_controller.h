@@ -4,6 +4,8 @@
 #include <vector>
 #include <map>
 #include <string>
+#include <memory>
+#include <cartesian_impedance_controller/friction_model.h>
 
 namespace cartesian_impedance_controller
 {
@@ -131,7 +133,12 @@ namespace cartesian_impedance_controller
     */
     void setFrictionCompensation(bool enabled);
 
-    /*! \brief Set per-joint friction parameters from YAML configuration
+    /*! \brief Set friction model
+    * \param[in] model Unique pointer to friction model
+    */
+    void setFrictionModel(std::unique_ptr<FrictionModel> model);
+
+    /*! \brief Set per-joint friction parameters from YAML configuration (legacy)
     * 
     * \param[in] joint_names Vector of joint names
     * \param[in] coulomb_friction_params Map of joint names to coulomb friction values
@@ -256,13 +263,12 @@ namespace cartesian_impedance_controller
 
     double delta_tau_max_{1.0};                   //!< Maximum allowed torque change per time step
     
-    // Friction compensation parameters
+    // Friction compensation
     bool friction_compensation_enabled_{false};   //!< Enable/disable friction compensation
-    double static_compensation_torque_{0.5};      //!< Static friction compensation torque in N·m
-    double velocity_threshold_{0.001};            //!< Static friction velocity threshold in rad/s
-    
-    // Per-joint friction parameters
+    std::unique_ptr<FrictionModel> friction_model_; //!< Friction model instance
     std::vector<std::string> joint_names_;        //!< Joint names for friction mapping
+    
+    // Legacy parameters (for backward compatibility)
     std::map<std::string, double> coulomb_friction_params_;  //!< Coulomb friction parameters per joint
     std::map<std::string, double> viscous_friction_params_;  //!< Viscous friction parameters per joint
 

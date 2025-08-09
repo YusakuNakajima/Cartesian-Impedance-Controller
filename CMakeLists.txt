@@ -48,6 +48,7 @@ DEPENDENCIES
 generate_dynamic_reconfigure_options(
   cfg/damping.cfg
   cfg/friction.cfg
+  cfg/lugre_friction.cfg
   cfg/stiffness.cfg
   cfg/wrench.cfg
 )
@@ -70,7 +71,11 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 # Core library
-add_library(${PROJECT_NAME} src/cartesian_impedance_controller.cpp)
+add_library(${PROJECT_NAME} 
+  src/cartesian_impedance_controller.cpp
+  src/coulomb_viscous_friction_model.cpp
+  src/lugre_friction_model.cpp
+)
 add_dependencies(
   ${PROJECT_NAME}
   ${${PROJECT_NAME}_EXPORTED_TARGETS}

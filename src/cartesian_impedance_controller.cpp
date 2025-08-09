@@ -1,4 +1,5 @@
 #include <cartesian_impedance_controller/cartesian_impedance_controller.h>
+#include <cartesian_impedance_controller/coulomb_viscous_friction_model.h>
 #include "pseudo_inversion.h"
 
 #include <Eigen/Core>
@@ -237,6 +238,11 @@ namespace cartesian_impedance_controller
     this->friction_compensation_enabled_ = enabled;
   }
 
+  void CartesianImpedanceController::setFrictionModel(std::unique_ptr<FrictionModel> model)
+  {
+    this->friction_model_ = std::move(model);
+  }
+
   void CartesianImpedanceController::setJointFrictionParameters(const std::vector<std::string>& joint_names,
                                                                const std::map<std::string, double>& coulomb_friction_params,
                                                                const std::map<std::string, double>& viscous_friction_params)
@@ -244,6 +250,22 @@ namespace cartesian_impedance_controller
     this->joint_names_ = joint_names;
     this->coulomb_friction_params_ = coulomb_friction_params;
     this->viscous_friction_params_ = viscous_friction_params;
+    
+    // Also initialize the new friction model with these parameters (for compatibility)
+    if (!this->friction_model_) {
+      this->friction_model_ = std::make_unique<CoulombViscousFrictionModel>();
+    }
+    
+    // Convert legacy parameters to new format
+    std::map<std::string, std::map<std::string, double>> parameters;
+    for (const auto& joint_name : joint_names) {
+      parameters[joint_name]["coulomb_friction"] = coulomb_friction_params.find(joint_name) != coulomb_friction_params.end() ? 
+                                                   coulomb_friction_params.at(joint_name) : 0.0;
+      parameters[joint_name]["viscous_friction"] = viscous_friction_params.find(joint_name) != viscous_friction_params.end() ? 
+                                                   viscous_friction_params.at(joint_name) : 0.0;
+    }
+    
+    this->friction_model_->initialize(joint_names, parameters);
   }
 
   Eigen::VectorXd CartesianImpedanceController::calculateCommandedTorques(const Eigen::VectorXd &q,
@@ -317,21 +339,19 @@ namespace cartesian_impedance_controller
     
     // Apply friction compensation if enabled
     if (this->friction_compensation_enabled_) {
-        
-        // std::cout << "Friction compensation ENABLED" << std::endl;
-        
-        // Check if we have per-joint friction parameters and joint names match
-        bool use_joint_params = !this->joint_names_.empty() && 
-                              !this->coulomb_friction_params_.empty() && 
-                              !this->viscous_friction_params_.empty() &&
-                              this->joint_names_.size() == this->n_joints_;
-        
-        if (use_joint_params) {
-            // std::cout << "Using per-joint friction parameters for " << this->joint_names_.size() << " joints" << std::endl;
+        // Use new friction model if available
+        if (this->friction_model_ && !this->joint_names_.empty()) {
+            tau_friction_comp = this->friction_model_->computeFrictionTorque(
+                this->joint_names_, this->q_, this->dq_, 1.0/1000.0); // Assuming 1kHz update rate
+        } 
+        // Fallback to legacy implementation for backward compatibility
+        else if (!this->joint_names_.empty() && 
+                 !this->coulomb_friction_params_.empty() && 
+                 !this->viscous_friction_params_.empty() &&
+                 this->joint_names_.size() == this->n_joints_) {
             
             for (size_t i = 0; i < this->n_joints_; ++i) {
                 if (i < this->joint_names_.size()) {
-                    // Use per-joint coulomb and viscous friction parameters
                     const std::string& joint_name = this->joint_names_[i];
                     auto coulomb_it = this->coulomb_friction_params_.find(joint_name);
                     auto viscous_it = this->viscous_friction_params_.find(joint_name);
@@ -346,32 +366,10 @@ namespace cartesian_impedance_controller
                         double coulomb_term = (velocity > 0) ? coulomb_friction : -coulomb_friction;
                         double viscous_term = viscous_friction * velocity;
                         tau_friction_comp[i] = coulomb_term + viscous_term;
-                        
-                        // Debug print for each joint
-                        // std::cout << "Joint " << i << " (" << joint_name << "): "
-                        //           << "vel=" << std::setprecision(4) << std::fixed << velocity
-                        //           << " rad/s, coulomb=" << coulomb_friction
-                        //           << " Nm, viscous=" << viscous_friction
-                        //           << " Nm*s/rad" << std::endl;
-                        // std::cout << "  -> Coulomb term: " << coulomb_term << " Nm"
-                        //           << ", Viscous term: " << viscous_term << " Nm"
-                        //           << ", Total friction: " << tau_friction_comp[i] << " Nm" << std::endl;
-                    } else {
-                        // std::cout << "Joint " << i << " (" << joint_name << "): No friction parameters found" << std::endl;
                     }
                 }
             }
-        } else {
-            // std::cout << "Per-joint friction parameters not available, using zero friction" << std::endl;
         }
-        
-        // std::cout << "Tau WITHOUT friction: [" << tau_without_friction.transpose() << "] (norm: " << tau_without_friction.norm() << ")" << std::endl;
-        // std::cout << "Tau friction compensation: [" << tau_friction_comp.transpose() << "] (norm: " << tau_friction_comp.norm() << ")" << std::endl;
-        
-        // Friction compensation applied
-        
-    } else {
-        // No friction compensation
     }
 
     // Parameter tuning information

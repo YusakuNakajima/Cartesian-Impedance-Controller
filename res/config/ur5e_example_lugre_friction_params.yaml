@@ -1,0 +1,48 @@
+# LuGre friction model parameters for Cartesian Impedance Controller
+# LuGre model: tau_friction = sigma0 * z + sigma1 * dz + sigma2 * velocity
+# dz/dt = velocity - sigma0 * |velocity| * z / g(velocity)
+# g(velocity) = coulomb + (static - coulomb) * exp(-(velocity/vs)^2)
+
+cartesian_impedance_controller:
+  shoulder_pan_joint:
+    sigma0: 1000.0              # Stiffness coefficient [Nm/rad]
+    sigma1: 10.0                # Damping coefficient [Nm*s/rad]  
+    sigma2: 0.4                 # Viscous coefficient [Nm*s/rad]
+    coulomb_friction: 2.5       # Coulomb friction [Nm]
+    static_friction: 3.5        # Static friction [Nm]
+    stribeck_velocity: 0.01     # Stribeck velocity [rad/s]
+  shoulder_lift_joint:
+    sigma0: 1200.0              
+    sigma1: 12.0                
+    sigma2: 0.1                 
+    coulomb_friction: 3.3       
+    static_friction: 4.5        
+    stribeck_velocity: 0.01     
+  elbow_joint:
+    sigma0: 800.0               
+    sigma1: 8.0                 
+    sigma2: 0.7                 
+    coulomb_friction: 0.4       
+    static_friction: 0.8        
+    stribeck_velocity: 0.015    
+  wrist_1_joint:
+    sigma0: 500.0               
+    sigma1: 5.0                 
+    sigma2: 0.3                 
+    coulomb_friction: 0.2       
+    static_friction: 0.4        
+    stribeck_velocity: 0.01     
+  wrist_2_joint:
+    sigma0: 500.0               
+    sigma1: 5.0                 
+    sigma2: 0.2                 
+    coulomb_friction: 0.2       
+    static_friction: 0.4        
+    stribeck_velocity: 0.01     
+  wrist_3_joint:
+    sigma0: 400.0               
+    sigma1: 4.0                 
+    sigma2: 0.2                 
+    coulomb_friction: 0.2       
+    static_friction: 0.35       
+    stribeck_velocity: 0.01     

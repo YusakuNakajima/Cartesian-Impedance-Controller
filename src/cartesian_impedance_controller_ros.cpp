@@ -1,4 +1,6 @@
 #include <cartesian_impedance_controller/cartesian_impedance_controller_ros.h>
+#include <cartesian_impedance_controller/coulomb_viscous_friction_model.h>
+#include <cartesian_impedance_controller/lugre_friction_model.h>
 
 #include <eigen_conversions/eigen_msg.h>
 #include <tf_conversions/tf_eigen.h>
@@ -50,6 +52,11 @@ namespace cartesian_impedance_controller
     this->dynamic_server_friction_param_ = std::make_unique<dynamic_reconfigure::Server<cartesian_impedance_controller::frictionConfig>>(ros::NodeHandle(std::string(nh.getNamespace() + "/friction_compensation_reconfigure")));
     dynamic_server_friction_param_->setCallback(
         boost::bind(&CartesianImpedanceControllerRos::dynamicFrictionCb, this, _1, _2));
+
+    this->dynamic_server_lugre_friction_param_ = std::make_unique<dynamic_reconfigure::Server<cartesian_impedance_controller::lugre_frictionConfig>>(ros::NodeHandle(std::string(nh.getNamespace() + "/lugre_friction_compensation_reconfigure")));
+    dynamic_server_lugre_friction_param_->setCallback(
+        boost::bind(&CartesianImpedanceControllerRos::dynamicLuGreFrictionCb, this, _1, _2));
+    
     return true;
   }
 
@@ -685,6 +692,90 @@ namespace cartesian_impedance_controller
     }
   }
 
+  void CartesianImpedanceControllerRos::dynamicLuGreFrictionCb(cartesian_impedance_controller::lugre_frictionConfig &config, uint32_t level)
+  {
+    // Only apply LuGre parameters if current model is LuGre
+    if (this->current_friction_model_type_ != "lugre") {
+      ROS_WARN("LuGre dynamic reconfigure called but current friction model is %s, ignoring", 
+               this->current_friction_model_type_.c_str());
+      return;
+    }
+    
+    // Set friction compensation enable/disable
+    CartesianImpedanceController::setFrictionCompensation(config.friction_enable);
+    
+    // Update per-joint LuGre parameters from dynamic reconfigure
+    std::vector<std::string> joint_names;
+    
+    // Try multiple parameter locations
+    ros::NodeHandle nh;
+    bool got_joints = false;
+    if (nh.getParam("joints", joint_names)) {
+        got_joints = true;
+    } else if (nh.getParam("/cartesian_impedance_controller/joints", joint_names)) {
+        got_joints = true;
+    } else {
+        joint_names = this->joint_names_;  // Use stored joint names
+        got_joints = !joint_names.empty();
+    }
+    
+    if (got_joints && joint_names.size() >= 6) {
+      std::map<std::string, std::map<std::string, double>> model_parameters;
+      
+      // Map dynamic reconfigure parameters to actual joint names for LuGre model
+      model_parameters[joint_names[0]]["sigma0"] = config.joint1_sigma0;
+      model_parameters[joint_names[0]]["sigma1"] = config.joint1_sigma1;
+      model_parameters[joint_names[0]]["sigma2"] = config.joint1_sigma2;
+      model_parameters[joint_names[0]]["coulomb_friction"] = config.joint1_coulomb_friction;
+      model_parameters[joint_names[0]]["static_friction"] = config.joint1_static_friction;
+      model_parameters[joint_names[0]]["stribeck_velocity"] = config.joint1_stribeck_velocity;
+      
+      model_parameters[joint_names[1]]["sigma0"] = config.joint2_sigma0;
+      model_parameters[joint_names[1]]["sigma1"] = config.joint2_sigma1;
+      model_parameters[joint_names[1]]["sigma2"] = config.joint2_sigma2;
+      model_parameters[joint_names[1]]["coulomb_friction"] = config.joint2_coulomb_friction;
+      model_parameters[joint_names[1]]["static_friction"] = config.joint2_static_friction;
+      model_parameters[joint_names[1]]["stribeck_velocity"] = config.joint2_stribeck_velocity;
+      
+      model_parameters[joint_names[2]]["sigma0"] = config.joint3_sigma0;
+      model_parameters[joint_names[2]]["sigma1"] = config.joint3_sigma1;
+      model_parameters[joint_names[2]]["sigma2"] = config.joint3_sigma2;
+      model_parameters[joint_names[2]]["coulomb_friction"] = config.joint3_coulomb_friction;
+      model_parameters[joint_names[2]]["static_friction"] = config.joint3_static_friction;
+      model_parameters[joint_names[2]]["stribeck_velocity"] = config.joint3_stribeck_velocity;
+      
+      model_parameters[joint_names[3]]["sigma0"] = config.joint4_sigma0;
+      model_parameters[joint_names[3]]["sigma1"] = config.joint4_sigma1;
+      model_parameters[joint_names[3]]["sigma2"] = config.joint4_sigma2;
+      model_parameters[joint_names[3]]["coulomb_friction"] = config.joint4_coulomb_friction;
+      model_parameters[joint_names[3]]["static_friction"] = config.joint4_static_friction;
+      model_parameters[joint_names[3]]["stribeck_velocity"] = config.joint4_stribeck_velocity;
+      
+      model_parameters[joint_names[4]]["sigma0"] = config.joint5_sigma0;
+      model_parameters[joint_names[4]]["sigma1"] = config.joint5_sigma1;
+      model_parameters[joint_names[4]]["sigma2"] = config.joint5_sigma2;
+      model_parameters[joint_names[4]]["coulomb_friction"] = config.joint5_coulomb_friction;
+      model_parameters[joint_names[4]]["static_friction"] = config.joint5_static_friction;
+      model_parameters[joint_names[4]]["stribeck_velocity"] = config.joint5_stribeck_velocity;
+      
+      model_parameters[joint_names[5]]["sigma0"] = config.joint6_sigma0;
+      model_parameters[joint_names[5]]["sigma1"] = config.joint6_sigma1;
+      model_parameters[joint_names[5]]["sigma2"] = config.joint6_sigma2;
+      model_parameters[joint_names[5]]["coulomb_friction"] = config.joint6_coulomb_friction;
+      model_parameters[joint_names[5]]["static_friction"] = config.joint6_static_friction;
+      model_parameters[joint_names[5]]["stribeck_velocity"] = config.joint6_stribeck_velocity;
+      
+      // Update the friction model parameters
+      if (this->friction_model_) {
+        this->friction_model_->updateParameters(model_parameters);
+        ROS_INFO("Updated LuGre friction parameters via dynamic reconfigure");
+      }
+    } else {
+      ROS_WARN("Could not get joint names or insufficient joints (%zu) for LuGre parameter update", 
+               got_joints ? joint_names.size() : 0);
+    }
+  }
+
   void CartesianImpedanceControllerRos::trajCb(const trajectory_msgs::JointTrajectoryConstPtr &msg)
   {
     ROS_INFO("Got trajectory msg from trajectory topic.");
@@ -756,6 +847,13 @@ namespace cartesian_impedance_controller
   {
     try {
       ros::NodeHandle nh_friction;
+      
+      // Read friction model type
+      std::string friction_model_type;
+      nh_friction.param<std::string>("friction_model_type", friction_model_type, "coulomb_viscous");
+      this->current_friction_model_type_ = friction_model_type;
+      ROS_INFO("Using friction model: %s", friction_model_type.c_str());
+      
       std::map<std::string, double> coulomb_friction_params, viscous_friction_params;
       
       // Read friction parameters directly from parameter server
@@ -785,7 +883,50 @@ namespace cartesian_impedance_controller
                  joint_name.c_str(), coulomb_friction, viscous_friction);
       }
       
-      // Set the friction parameters
+      // Initialize friction model based on type
+      std::unique_ptr<FrictionModel> friction_model;
+      std::map<std::string, std::map<std::string, double>> model_parameters;
+      
+      if (friction_model_type == "lugre") {
+        friction_model = std::make_unique<LuGreFrictionModel>();
+        
+        // Load LuGre-specific parameters
+        for (const auto& joint_name : joint_names) {
+          std::string base_param = "/cartesian_impedance_controller/" + joint_name + "/";
+          
+          double sigma0, sigma1, sigma2, static_friction, stribeck_velocity;
+          nh_friction.param<double>(base_param + "sigma0", sigma0, 1000.0);
+          nh_friction.param<double>(base_param + "sigma1", sigma1, 10.0);
+          nh_friction.param<double>(base_param + "sigma2", sigma2, 0.4);
+          nh_friction.param<double>(base_param + "static_friction", static_friction, 1.5);
+          nh_friction.param<double>(base_param + "stribeck_velocity", stribeck_velocity, 0.01);
+          
+          model_parameters[joint_name]["sigma0"] = sigma0;
+          model_parameters[joint_name]["sigma1"] = sigma1;
+          model_parameters[joint_name]["sigma2"] = sigma2;
+          model_parameters[joint_name]["coulomb_friction"] = coulomb_friction_params[joint_name];
+          model_parameters[joint_name]["static_friction"] = static_friction;
+          model_parameters[joint_name]["stribeck_velocity"] = stribeck_velocity;
+          
+          ROS_INFO("Loaded LuGre friction for %s: sigma0=%.1f, sigma1=%.1f, sigma2=%.3f, coulomb=%.3f, static=%.3f, vs=%.4f", 
+                   joint_name.c_str(), sigma0, sigma1, sigma2, 
+                   coulomb_friction_params[joint_name], static_friction, stribeck_velocity);
+        }
+      } else {
+        // Default to Coulomb+Viscous model
+        friction_model = std::make_unique<CoulombViscousFrictionModel>();
+        
+        for (const auto& joint_name : joint_names) {
+          model_parameters[joint_name]["coulomb_friction"] = coulomb_friction_params[joint_name];
+          model_parameters[joint_name]["viscous_friction"] = viscous_friction_params[joint_name];
+        }
+      }
+      
+      // Initialize and set the friction model
+      friction_model->initialize(joint_names, model_parameters);
+      this->setFrictionModel(std::move(friction_model));
+      
+      // Also set legacy parameters for backward compatibility
       this->setJointFrictionParameters(joint_names, coulomb_friction_params, viscous_friction_params);
       
       // Update dynamic reconfigure with loaded values
